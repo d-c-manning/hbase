@@ -161,6 +161,11 @@ public class TestHFileArchiving {
       HFileArchiver::archiveStoreFiles);
   }
 
+  private boolean isFirstExistsCall(Map<Path,Boolean> tracker, Path path) {
+    Boolean oldValue = tracker.putIfAbsent(path, true);
+    return oldValue == null;
+  }
+
   private void testArchiveStoreFilesDifferentFileSystems(String walDir, String expectedBase,
     ArchivingFunction<Configuration, FileSystem, RegionInfo, Path, byte[],
       Collection<HStoreFile>> archivingFunction) throws IOException {
@@ -172,7 +177,9 @@ public class TestHFileArchiving {
     Path filePath = new Path("/mockDir/wals/mockFile");
     when(mockedFileSystem.getScheme()).thenReturn("mockFS");
     when(mockedFileSystem.mkdirs(any())).thenReturn(true);
-    when(mockedFileSystem.exists(any())).thenReturn(true);
+    HashMap<Path,Boolean> existsTracker = new HashMap<Path,Boolean>();
+    when(mockedFileSystem.exists(any())).thenAnswer(invocation -> !isFirstExistsCall(existsTracker, invocation.getArgument(0)));
+    // when(mockedFileSystem.exists(any())).thenReturn(true);
     RegionInfo mockedRegion = mock(RegionInfo.class);
     TableName tableName = TableName.valueOf("mockTable");
     when(mockedRegion.getTable()).thenReturn(tableName);
@@ -186,7 +193,7 @@ public class TestHFileArchiving {
     when(mockedFileSystem.rename(any(),any())).thenReturn(true);
     archivingFunction.apply(conf, mockedFileSystem, mockedRegion, tableDir, family, list);
     ArgumentCaptor<Path> pathCaptor = ArgumentCaptor.forClass(Path.class);
-    verify(mockedFileSystem, times(2)).rename(pathCaptor.capture(), any());
+    verify(mockedFileSystem, times(1)).rename(any(), pathCaptor.capture());
     String expectedDir = expectedBase +
       "archive/data/default/mockTable/mocked-region-encoded-name/testfamily/mockFile";
     assertTrue(pathCaptor.getAllValues().get(0).toString().equals(expectedDir));

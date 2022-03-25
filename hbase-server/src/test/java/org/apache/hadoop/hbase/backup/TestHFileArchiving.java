@@ -177,15 +177,6 @@ public class TestHFileArchiving {
       HFileArchiver::archiveStoreFiles);
   }
 
-//  private boolean isFirstExistsCall(Map<Path,Boolean> tracker, Path path) {
-//    Boolean oldValue = tracker.putIfAbsent(path, true);
-//    return oldValue == null;
-//  }
-
-  private boolean shouldExist(Map<Path,Boolean> tracker, Path path) {
-    return tracker.getOrDefault(path, true);
-  }
-
   private void testArchiveStoreFilesDifferentFileSystems(String walDir, String expectedBase,
     ArchivingFunction<Configuration, FileSystem, RegionInfo, Path, byte[],
       Collection<HStoreFile>> archivingFunction) throws IOException {
@@ -201,22 +192,17 @@ public class TestHFileArchiving {
     if(walDir != null) {
       conf.set(CommonFSUtils.HBASE_WAL_DIR, walDir);
     }
-    Path filePath = new Path("/mockDir/wals/mockFile");
     when(mockedFileSystem.getScheme()).thenReturn("mockFS");
     when(mockedFileSystem.mkdirs(any())).thenReturn(true);
-//    HashMap<Path,Boolean> existsTracker = new HashMap<Path,Boolean>();
-//    when(mockedFileSystem.exists(any())).thenAnswer(invocation -> !isFirstExistsCall(existsTracker, invocation.getArgument(0)));
-    HashMap<Path,Boolean> existsTracker = new HashMap<Path,Boolean>();
+    HashMap<Path,Boolean> existsTracker = new HashMap<>();
+    Path filePath = new Path("/mockDir/wals/mockFile");
     String expectedDir = expectedBase +
       "archive/data/default/mockTable/mocked-region-encoded-name/testfamily/mockFile";
     existsTracker.put(new Path(expectedDir), archiveFileExists);
     existsTracker.put(filePath, sourceFileExists);
-    // when(mockedFileSystem.exists(any())).thenAnswer(invocation -> shouldExist(existsTracker, invocation.getArgument(0)));
     when(mockedFileSystem.exists(any())).thenAnswer(invocation ->
-      existsTracker.getOrDefault(invocation.getArgument(0), true));
+      existsTracker.getOrDefault((Path)invocation.getArgument(0), true));
     when(mockedFileSystem.getFileStatus(any())).thenReturn(mock(FileStatus.class));
-    // when(mockedFileSystem.exists(any())).thenReturn(true);
-    // when(mockedFileSystem.exists(any())).thenReturn(false).thenReturn(true);
     RegionInfo mockedRegion = mock(RegionInfo.class);
     TableName tableName = TableName.valueOf("mockTable");
     when(mockedRegion.getTable()).thenReturn(tableName);
@@ -231,19 +217,19 @@ public class TestHFileArchiving {
     archivingFunction.apply(conf, mockedFileSystem, mockedRegion, tableDir, family, list);
 
     if (sourceFileExists) {
-      ArgumentCaptor<Path> srcPathCaptor = ArgumentCaptor.forClass(Path.class);
-      ArgumentCaptor<Path> destPathCaptor = ArgumentCaptor.forClass(Path.class);
+      ArgumentCaptor<Path> srcPath = ArgumentCaptor.forClass(Path.class);
+      ArgumentCaptor<Path> destPath = ArgumentCaptor.forClass(Path.class);
       if (archiveFileExists) {
         // Verify we renamed the archived file to sideline, and then renamed the source file.
-        verify(mockedFileSystem, times(2)).rename(srcPathCaptor.capture(), destPathCaptor.capture());
-        assertTrue(srcPathCaptor.getAllValues().get(0).toString().equals(expectedDir));
-        assertTrue(srcPathCaptor.getAllValues().get(1).equals(filePath));
-        assertTrue(destPathCaptor.getAllValues().get(1).toString().equals(expectedDir));
+        verify(mockedFileSystem, times(2)).rename(srcPath.capture(), destPath.capture());
+        assertEquals(expectedDir, srcPath.getAllValues().get(0).toString());
+        assertEquals(filePath, srcPath.getAllValues().get(1));
+        assertEquals(expectedDir, destPath.getAllValues().get(1).toString());
       } else {
         // Verify we renamed the source file to the archived file.
-        verify(mockedFileSystem, times(1)).rename(srcPathCaptor.capture(), destPathCaptor.capture());
-        assertTrue(srcPathCaptor.getAllValues().get(0).equals(filePath));
-        assertTrue(destPathCaptor.getAllValues().get(0).toString().equals(expectedDir));
+        verify(mockedFileSystem, times(1)).rename(srcPath.capture(), destPath.capture());
+        assertEquals(filePath, srcPath.getAllValues().get(0));
+        assertEquals(expectedDir, destPath.getAllValues().get(0).toString());
       }
     } else {
       if (archiveFileExists) {
